@@ -173,6 +173,23 @@ Supported audio formats: `.wav`, `.mp3`, `.ogg`, `.opus`, `.amr`, `.silk`, `.fla
 - **No LLM in hot path**: Plugin does enrichment only; intent dispatch lives in the daemon.
 - **Fallback chains**: Both ASR and OCR try multiple models in order before giving up.
 
+## Acknowledgments
+
+This project incorporates code and design patterns derived from
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) by Nous Research.
+
+| Function | Source | Purpose |
+|----------|--------|---------|
+| `utf16_len()` | `gateway/platforms/base.py` | Telegram message length in UTF-16 code units |
+| `_prefix_within_utf16_limit()` | `gateway/platforms/base.py` | Safe UTF-16 truncation (surrogate-pair aware) |
+| `_custom_unit_to_cp()` | `gateway/platforms/base.py` | Binary search for custom length unit boundaries |
+| `truncate_message()` | `gateway/platforms/base.py` | Code-block-aware message splitting with chunk indicators |
+| `_SILENCE_NARRATION` | `gateway/delivery.py` | Silence narration filter (suppresses `silent`, `🔇`, etc.) |
+
+These functions are pure, zero-dependency, and extracted verbatim or adapted
+with minimal changes. They enhance the core message pipeline without adding
+any runtime overhead or external dependencies.
+
 ## License
 
 MIT

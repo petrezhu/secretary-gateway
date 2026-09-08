@@ -42,6 +42,9 @@ Daemon inbound contract (POST /api/inbound):
         {"action": "allow"}                         — pass to agent
 
 Self-contained — NO dependency on any daemon's Python package.
+Several utility functions (utf16_len, truncate_message, silence filter)
+are derived from Hermes Agent's gateway/platforms/base.py and
+gateway/delivery.py by Nous Research.  See Acknowledgments in README.
 Optional: secretary.memory.auto_memorize (auto-detected at runtime).
 """
 
@@ -51,9 +54,10 @@ import asyncio
 import base64
 import logging
 import os
+import re
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import requests as _requests
 
@@ -129,6 +133,184 @@ _AUDIO_MIME_MAP = {
     ".m4a": "audio/mp4",
     ".webm": "audio/webm",
 }
+
+# ── UTF-16 Utilities (from Hermes Agent) ────────────────────────────────────
+# Telegram measures message length in UTF-16 code units, not Unicode
+# codepoints.  Emoji outside the BMP (😀, CJK Extension B, …) use surrogate
+# pairs and consume 2 units each.
+# Source: gateway/platforms/base.py — Nous Research / Hermes Agent
+
+
+def utf16_len(s: str) -> int:
+    """Count UTF-16 code units in *s*."""
+    return len(s.encode("utf-16-le")) // 2
+
+
+def _prefix_within_utf16_limit(s: str, limit: int) -> str:
+    """Return the longest prefix of *s* whose UTF-16 length ≤ *limit*."""
+    if utf16_len(s) <= limit:
+        return s
+    lo, hi = 0, len(s)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if utf16_len(s[:mid]) <= limit:
+            lo = mid
+        else:
+            hi = mid - 1
+    return s[:lo]
+
+
+def _custom_unit_to_cp(
+    s: str, budget: int, len_fn: Callable[[str], int],
+) -> int:
+    """Largest codepoint offset *n* such that ``len_fn(s[:n]) <= budget``."""
+    if len_fn(s) <= budget:
+        return len(s)
+    lo, hi = 0, len(s)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if len_fn(s[:mid]) <= budget:
+            lo = mid
+        else:
+            hi = mid - 1
+    return lo
+
+
+# ── Silence Narration Filter (from Hermes Agent) ────────────────────────────
+# Source: gateway/delivery.py — Nous Research / Hermes Agent
+
+_SILENCE_NARRATION = re.compile(
+    r'^[\s*_~`]*\(?\s*(silent|silence|no\s+response|no\s+reply)\s*\.?\)?[\s*_~`]*$'
+    r'|^[\s*_~`]*[\U0001F507\.\u2026]+[\s*_~`]*$',
+    re.IGNORECASE,
+)
+
+
+def _is_silence_narration(content: Optional[str]) -> bool:
+    """True when *content* is only a silence-narration token."""
+    if not content:
+        return False
+    stripped = content.strip()
+    if not stripped or len(stripped) > 64:
+        return False
+    return bool(_SILENCE_NARRATION.match(stripped))
+
+
+def truncate_message(
+    content: str,
+    max_length: int = 4096,
+    len_fn: Optional[Callable[[str], int]] = None,
+) -> List[str]:
+    """Split a long message into chunks, preserving code block boundaries.
+
+    Derived from Hermes Agent's ``BasePlatformAdapter.truncate_message``.
+    When a split falls inside a triple-backtick code block, the fence is
+    closed at the end of the current chunk and reopened at the start of
+    the next.  Multi-chunk responses receive indicators like ``(1/3)``.
+
+    Args:
+        content: The full message content.
+        max_length: Maximum length per chunk (default 4096 for Telegram).
+        len_fn: Length function.  Defaults to ``len`` (codepoints).
+                Pass ``utf16_len`` for Telegram.
+    """
+    _len = len_fn or len
+    if _len(content) <= max_length:
+        return [content]
+
+    INDICATOR_RESERVE = 10
+    FENCE_CLOSE = "\n```"
+
+    chunks: List[str] = []
+    remaining = content
+    carry_lang: Optional[str] = None
+
+    while remaining:
+        prefix = f"```{carry_lang}\n" if carry_lang is not None else ""
+
+        headroom = (
+            max_length - INDICATOR_RESERVE
+            - _len(prefix) - _len(FENCE_CLOSE)
+        )
+        if headroom < 1:
+            headroom = max(1, max_length // 2)
+
+        # Everything remaining fits
+        if _len(prefix) + _len(remaining) <= max_length - INDICATOR_RESERVE:
+            final_chunk = prefix + remaining
+            _in_code = carry_lang is not None
+            if _in_code:
+                for _line in remaining.split("\n"):
+                    _stripped = _line.strip()
+                    if _stripped.startswith("```"):
+                        if _in_code:
+                            _in_code = False
+                        else:
+                            _in_code = True
+                if _in_code:
+                    final_chunk += FENCE_CLOSE
+            chunks.append(final_chunk)
+            break
+
+        # Find natural split point
+        if _len is not len:
+            _cp_limit = _custom_unit_to_cp(remaining, headroom, _len)
+        else:
+            _cp_limit = headroom
+        region = remaining[:_cp_limit]
+        split_at = region.rfind("\n")
+        if split_at < _cp_limit // 2:
+            split_at = region.rfind(" ")
+        if split_at < 1:
+            split_at = max(1, _cp_limit)
+
+        # Avoid splitting inside inline code spans
+        candidate = remaining[:split_at]
+        backtick_count = candidate.count("`") - candidate.count("\\`")
+        if backtick_count % 2 == 1:
+            last_bt = candidate.rfind("`")
+            while last_bt > 0 and candidate[last_bt - 1] == "\\":
+                last_bt = candidate.rfind("`", 0, last_bt)
+            if last_bt > 0:
+                safe_split = candidate.rfind(" ", 0, last_bt)
+                nl_split = candidate.rfind("\n", 0, last_bt)
+                safe_split = max(safe_split, nl_split)
+                if safe_split > _cp_limit // 4:
+                    split_at = safe_split
+
+        chunk_body = remaining[:split_at]
+        remaining = remaining[split_at:].lstrip()
+
+        full_chunk = prefix + chunk_body
+
+        in_code = carry_lang is not None
+        lang = carry_lang or ""
+        for line in chunk_body.split("\n"):
+            stripped = line.strip()
+            if stripped.startswith("```"):
+                if in_code:
+                    in_code = False
+                    lang = ""
+                else:
+                    in_code = True
+                    tag = stripped[3:].strip()
+                    lang = tag.split()[0] if tag else ""
+
+        if in_code:
+            full_chunk += FENCE_CLOSE
+            carry_lang = lang
+        else:
+            carry_lang = None
+
+        chunks.append(full_chunk)
+
+    if len(chunks) > 1:
+        total = len(chunks)
+        chunks = [
+            f"{chunk} ({i + 1}/{total})" for i, chunk in enumerate(chunks)
+        ]
+
+    return chunks
 
 
 # ── Plugin Entry Point ───────────────────────────────────────────────────────
@@ -279,6 +461,18 @@ def _on_pre_gateway_dispatch(
     if action == "handle":
         replies = decision.get("replies")
         reply = decision.get("reply", "")
+
+        # Filter silence narrations (from Hermes Agent delivery.py)
+        if reply and _is_silence_narration(reply):
+            return {"action": "allow"}
+        if replies:
+            replies = [r for r in replies if r and not _is_silence_narration(r)]
+            if not replies:
+                return {"action": "allow"}
+
+        # Use truncate_message for single long replies (code-block aware)
+        if reply and not replies:
+            replies = truncate_message(reply)
 
         if replies:
             for i, chunk in enumerate(replies):
