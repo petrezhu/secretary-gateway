@@ -1,129 +1,177 @@
-# secretary-gateway
+# gateway-interceptor
 
-A [Hermes Agent](https://github.com/nousresearch/hermes-agent) plugin that intercepts inbound IM messages and routes them through [Secretary](https://github.com/petrezhu/secretary) for smart dispatch.
+Universal IM message interception plugin for AI Agent harnesses.
 
-Secretary handles simple intents directly (greetings, tasks, portfolio queries) with <50ms regex matching — no LLM needed. Complex queries pass through to the Hermes agent as usual.
-
-## How It Works
-
-```
-User message
-    │
-    ▼
-┌──────────────────────────────────────┐
-│  Hermes Gateway                      │
-│  pre_gateway_dispatch hook           │
-│  (this plugin)                       │
-│       │                              │
-│       ├─ Platform filter             │
-│       ├─ OCR (image → text)          │
-│       │                              │
-│       ▼                              │
-│  POST /api/inbound ──────────────────┼──▶ Secretary Gateway (8901)
-│                                      │         │
-│                                      │         ├─ IntentRegistry (regex)
-│                                      │         ├─ Data query (SQLite)
-│                                      │         └─ Return decision
-│                                      │
-│       ├─ action: "handle" → reply    │
-│       ├─ action: "allow"  → agent    │
-│       └─ unreachable     → fail-open │
-└──────────────────────────────────────┘
-```
-
-## Install
-
-### Option A: Copy into Hermes plugins directory
-
-```bash
-# Global
-cp __init__.py plugin.yaml ~/.hermes/plugins/secretary-gateway/
-
-# Or per-profile
-cp __init__.py plugin.yaml ~/.hermes/profiles/main/plugins/secretary-gateway/
-```
-
-### Option B: Symlink from this repo
-
-```bash
-ln -sf /path/to/secretary-gateway ~/.hermes/plugins/secretary-gateway
-```
-
-Then restart Hermes to load the plugin.
-
-## Configuration
-
-All configuration is via environment variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SECRETARY_GATEWAY_URL` | `http://127.0.0.1:8901` | Secretary Gateway HTTP address |
-| `SECRETARY_TIMEOUT` | `3` | API call timeout (seconds) |
-| `SECRETARY_INTERCEPT_PLATFORMS` | `qqbot` | Platforms to intercept (comma-separated, empty = all) |
-| `NEWAPI_API_BASE` | `http://127.0.0.1:3300/v1` | OpenAI-compatible API for OCR |
-| `NEWAPI_API_KEY` | (empty) | API key for OCR vision models |
-| `OCR_MODELS` | `deepseek-v4-flash,deepseek-v4-pro` | OCR model fallback chain (comma-separated) |
-| `OCR_TIMEOUT` | `30` | OCR request timeout (seconds) |
-
-## Requirements
-
-- **Hermes Agent** with plugin hook support (`pre_gateway_dispatch`)
-- **Python** ≥ 3.9
-- **requests** library (the only external dependency)
-- A running **Secretary Gateway** instance (for intent dispatch)
-
-### Optional
-
-- **secretary** Python package — if installed, user messages are automatically fed to its memory system (`auto_memorize`)
-- Vision-capable LLM API — for OCR extraction from image messages
-
-## Design Principles
-
-- **Self-contained**: Zero dependency on the `secretary` Python package. All it needs is an HTTP endpoint.
-- **Fail-open**: If Secretary is unreachable, times out, or returns an error, the message passes through to the Hermes agent. No message is ever lost.
-- **No LLM in the hot path**: Intent matching is pure regex + keywords, <50ms, zero API cost.
-- **OCR built-in**: Image messages are automatically processed via vision API before intent matching.
-- **Platform-agnostic**: Works with any Hermes gateway platform (QQ, Telegram, Discord) via the `INTERCEPT_PLATFORMS` filter.
+Enriches inbound messages (voice → text via ASR, image → text via OCR) and routes them through a conforming gateway daemon for smart dispatch — simple intents handled directly, complex queries pass through to the agent.
 
 ## Architecture
 
-This plugin is the **client side** of the Secretary architecture:
+```
+User message (text / voice / image)
+    │
+    ▼
+┌──────────────────────────────────────────────────┐
+│  Agent Harness                                   │
+│  (Hermes · OpenClaw · QClaw · MimoClaw · …)     │
+│                                                  │
+│  gateway-interceptor plugin                      │
+│       │                                          │
+│       ├─ Platform filter                         │
+│       ├─ ASR: voice → text (MiMo-V2.5-ASR, …)  │
+│       ├─ OCR: image → text (DeepSeek-V4, …)     │
+│       │                                          │
+│       ▼                                          │
+│  POST /api/inbound ──────────────────────────────┼──▶ Gateway Daemon
+│                                                  │    (Secretary / your daemon)
+│       ├─ {action:"handle", reply:"..."} → skip   │         │
+│       ├─ {action:"allow"}               → agent  │         ├─ Intent dispatch
+│       └─ daemon unreachable             → fail-open│        ├─ Data query
+└──────────────────────────────────────────────────┘         └─ Decision
+```
+
+## Two Abstraction Layers
+
+### Harness Side (who loads this plugin)
+
+The plugin registers a `pre_gateway_dispatch` hook — the Hermes convention. Other harnesses adapt the hook name in `register()`:
+
+| Harness | Hook Mechanism | Adaptation |
+|---------|---------------|------------|
+| **Hermes Agent** | `ctx.register_hook("pre_gateway_dispatch", cb)` | Works out of the box |
+| **OpenClaw** | Plugin loader TBD | Implement `register(ctx)` for OpenClaw's hook system |
+| **QClaw** | Plugin loader TBD | Same pattern |
+| **MimoClaw** | Plugin loader TBD | Same pattern |
+
+The hook contract is harness-agnostic:
+
+```python
+def hook(event, gateway, **kwargs) -> {"action": "skip"} | {"action": "allow"} | None
+```
+
+### Daemon Side (what this plugin calls)
+
+Any HTTP service implementing `POST /api/inbound`:
 
 ```
-┌─────────────────────┐         ┌──────────────────────────┐
-│  Hermes Agent       │         │  Secretary               │
-│  (this plugin)      │         │  (separate project)      │
-│                     │         │                          │
-│  pre_gateway_dispatch│─HTTP──▶│  /api/inbound            │
-│  hook               │◀────────│  Intent dispatch         │
-│                     │         │  Data queries            │
-│  send reply via     │         │  Proactive notifications │
-│  gateway adapter    │         │  Health monitoring       │
-└─────────────────────┘         └──────────────────────────┘
+Request:
+{
+    "text": "user message (after ASR/OCR enrichment)",
+    "user_id": "12345",
+    "chat_id": "channel-789",
+    "chat_type": "dm | group",
+    "platform": "qqbot | telegram | discord | ..."
+}
+
+Response:
+{"action": "handle", "reply": "daemon's answer"}      → plugin replies, agent skips
+{"action": "handle", "replies": ["part1", "part2"]}   → multi-part reply
+{"action": "allow"}                                    → pass to agent
 ```
 
-The Secretary project provides:
-- Intent handler framework (regex-based, pluggable)
-- Data layer (goals.db, tasks.db, portfolio.json)
-- Proactive notifications (morning briefing, alerts)
-- Server monitoring (health checks, deadman switch)
+Implementing this contract is all a daemon needs. Secretary is the reference implementation; you can build your own with any stack.
 
-This plugin provides:
-- Message interception hook for Hermes
-- Platform filtering
-- OCR for image messages
-- Reply routing through Hermes gateway adapters
+## Media Enrichment Pipeline
 
-## Development
+Messages go through a three-stage enrichment before hitting the daemon:
+
+```
+Raw message
+    │
+    ├─ Has text? → use text directly
+    │
+    ├─ Has voice? → ASR (speech-to-text)
+    │   └─ Download audio → ffmpeg convert → POST /v1/audio/transcriptions
+    │      Models: MiMo-V2.5-ASR (fallback chain, configurable)
+    │
+    ├─ Has image? → OCR (image-to-text)
+    │   └─ Download image → base64 → POST /v1/chat/completions (vision)
+    │      Models: deepseek-v4-flash (fallback chain, configurable)
+    │
+    └─ None of above → pass to agent (let agent handle natively)
+```
+
+Each stage is fail-open: if ASR/OCR fails, the message passes through to the agent unchanged.
+
+## Install
+
+### Copy into harness plugins directory
 
 ```bash
-# Run tests (if Secretary project is available)
-cd /path/to/secretary
-pytest tests/unit/test_golden_set.py -v
+# Global (all profiles)
+cp __init__.py plugin.yaml ~/.hermes/plugins/gateway-interceptor/
 
-# Lint
-ruff check __init__.py
+# Per-profile
+cp __init__.py plugin.yaml ~/.hermes/profiles/main/plugins/gateway-interceptor/
 ```
+
+### Symlink (development)
+
+```bash
+ln -sf /path/to/secretary-gateway ~/.hermes/plugins/gateway-interceptor
+```
+
+### Install script
+
+```bash
+./install.sh                    # global copy
+./install.sh --profile main     # per-profile copy
+./install.sh --symlink          # symlink mode
+```
+
+Restart the harness to load the plugin.
+
+## Configuration
+
+### Daemon Connection
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GATEWAY_DAEMON_URL` | `http://127.0.0.1:8901` | Gateway daemon HTTP address |
+| `GATEWAY_DAEMON_TIMEOUT` | `3` | API call timeout (seconds) |
+| `GATEWAY_DAEMON_ENDPOINT` | `/api/inbound` | Inbound message endpoint path |
+| `GATEWAY_INTERCEPT_PLATFORMS` | `qqbot` | Platforms to intercept (comma-separated, empty=all) |
+
+> Backward compat: `SECRETARY_GATEWAY_URL`, `SECRETARY_TIMEOUT`, `SECRETARY_INTERCEPT_PLATFORMS` still work.
+
+### ASR (Voice → Text)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ASR_API_BASE` | `$NEWAPI_API_BASE` | OpenAI-compatible audio transcription API |
+| `ASR_API_KEY` | `$NEWAPI_API_KEY` | API key |
+| `ASR_MODELS` | `MiMo-V2.5-ASR` | Model fallback chain (comma-separated) |
+| `ASR_TIMEOUT` | `60` | Transcription timeout (seconds) |
+| `ASR_LANGUAGE` | `zh` | Language hint for ASR |
+
+Voice pipeline: download audio → ffmpeg convert to WAV (16kHz mono) → `POST /v1/audio/transcriptions` (multipart). Falls back to original format if ffmpeg unavailable.
+
+Supported audio formats: `.wav`, `.mp3`, `.ogg`, `.opus`, `.amr`, `.silk`, `.flac`, `.m4a`, `.webm`
+
+### OCR (Image → Text)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VISION_API_BASE` | `$NEWAPI_API_BASE` | OpenAI-compatible vision API |
+| `VISION_API_KEY` | `$NEWAPI_API_KEY` | API key |
+| `OCR_MODELS` | `deepseek-v4-flash,deepseek-v4-pro` | Model fallback chain |
+| `OCR_TIMEOUT` | `30` | OCR timeout (seconds) |
+
+## Requirements
+
+- **Python** ≥ 3.9
+- **requests** (only external dependency)
+- A running **gateway daemon** implementing `POST /api/inbound`
+- **ffmpeg** (optional, for voice format conversion)
+- Vision API (optional, for OCR)
+- ASR API (optional, for voice transcription)
+
+## Design Principles
+
+- **Universal**: Works with any Agent harness and any conforming daemon.
+- **Self-contained**: Zero dependency on daemon's Python package.
+- **Fail-open**: Daemon unreachable, ASR fail, OCR fail → message passes to agent. Nothing is lost.
+- **No LLM in hot path**: Plugin does enrichment only; intent dispatch lives in the daemon.
+- **Fallback chains**: Both ASR and OCR try multiple models in order before giving up.
 
 ## License
 
@@ -131,5 +179,5 @@ MIT
 
 ## Related Projects
 
-- [Secretary](https://github.com/petrezhu/secretary) — The full personal digital assistant daemon
-- [Hermes Agent](https://github.com/nousresearch/hermes-agent) — The AI agent framework
+- [Secretary](https://github.com/petrezhu/secretary) — Reference daemon implementation
+- [Hermes Agent](https://github.com/nousresearch/hermes-agent) — Reference harness

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Install secretary-gateway plugin into Hermes.
+# Install gateway-interceptor plugin into a harness plugins directory.
 #
 # Usage:
-#   ./install.sh              # install to ~/.hermes/plugins/ (global)
-#   ./install.sh --profile main  # install to ~/.hermes/profiles/main/plugins/
-#   ./install.sh --symlink    # symlink instead of copy (for development)
+#   ./install.sh                  # install to ~/.hermes/plugins/ (global)
+#   ./install.sh --profile main   # install to ~/.hermes/profiles/main/plugins/
+#   ./install.sh --symlink        # symlink instead of copy (for development)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PLUGIN_NAME="secretary-gateway"
+PLUGIN_NAME="gateway-interceptor"
 GLOBAL_DIR="$HOME/.hermes/plugins/$PLUGIN_NAME"
 PROFILE=""
 USE_SYMLINK=false
@@ -51,14 +51,12 @@ echo "Mode: $(if $USE_SYMLINK; then echo 'symlink'; else echo 'copy'; fi)"
 mkdir -p "$TARGET_DIR"
 
 if $USE_SYMLINK; then
-    # Remove existing files/dirs (but keep __pycache__)
     for f in __init__.py plugin.yaml; do
         rm -f "$TARGET_DIR/$f"
     done
-    # Create symlinks
     ln -sf "$SCRIPT_DIR/__init__.py" "$TARGET_DIR/__init__.py"
     ln -sf "$SCRIPT_DIR/plugin.yaml" "$TARGET_DIR/plugin.yaml"
-    echo "✅ Symlinked. Edit source in $SCRIPT_DIR — changes take effect on Hermes restart."
+    echo "✅ Symlinked. Edit source in $SCRIPT_DIR — changes take effect on harness restart."
 else
     cp "$SCRIPT_DIR/__init__.py" "$TARGET_DIR/__init__.py"
     cp "$SCRIPT_DIR/plugin.yaml" "$TARGET_DIR/plugin.yaml"
@@ -66,4 +64,4 @@ else
 fi
 
 echo ""
-echo "Next: restart Hermes to load the plugin."
+echo "Next: restart your harness to load the plugin."
