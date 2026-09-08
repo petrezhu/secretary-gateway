@@ -1,0 +1,7 @@
+name: secretary-gateway
+version: "0.2.0"
+description: "Hermes plugin: intercept inbound IM messages and route through Secretary for smart dispatch. Self-contained — no secretary package dependency."
+author: "Secretary Team"
+homepage: "https://github.com/petrezhu/secretary-gateway"
+hooks:
+  - pre_gateway_dispatch
