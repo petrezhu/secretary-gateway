@@ -112,11 +112,15 @@ def _on_pre_gateway_dispatch(
             for att in attachments:
                 if isinstance(att, dict):
                     url = att.get("url", "")
-                    if url and any(url.lower().endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".gif", ".webp")):
+                    exts = (".jpg", ".jpeg", ".png", ".gif", ".webp")
+                    if url and any(url.lower().endswith(ext) for ext in exts):
                         media_urls.append(url)
 
         if media_urls:
-            logger.info("[Secretary-Gateway] No text but %d image(s) found, attempting OCR...", len(media_urls))
+            logger.info(
+                "[Secretary-Gateway] No text but %d image(s), attempting OCR...",
+                len(media_urls),
+            )
             ocr_text = _ocr_extract_text(media_urls)
             if ocr_text:
                 text = ocr_text
@@ -314,7 +318,11 @@ def _image_to_base64_url(image_path_or_url: str) -> str:
         if not path.exists():
             raise FileNotFoundError(f"Image not found: {image_path_or_url}")
         suffix = path.suffix.lower()
-        mime_map = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp"}
+        mime_map = {
+            ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".png": "image/png", ".gif": "image/gif",
+            ".webp": "image/webp",
+        }
         mime = mime_map.get(suffix, "image/jpeg")
         b64 = base64.b64encode(path.read_bytes()).decode()
         return f"data:{mime};base64,{b64}"
