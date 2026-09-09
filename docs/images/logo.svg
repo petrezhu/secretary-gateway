@@ -1,0 +1,26 @@
+<svg viewBox="0 0 320 120" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#16213e;stop-opacity:1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="320" height="120" rx="8" fill="url(#bg)"/>
+
+  <!-- Shield icon -->
+  <path d="M50,25 L50,60 Q50,90 80,100 Q110,90 110,60 L110,25 Z" fill="none" stroke="#3498db" stroke-width="2"/>
+  <path d="M65,55 L75,65 L95,45" fill="none" stroke="#27ae60" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Title -->
+  <text x="130" y="50" font-family="monospace" font-size="18" fill="#ecf0f1" font-weight="bold">gateway-</text>
+  <text x="130" y="72" font-family="monospace" font-size="18" fill="#3498db" font-weight="bold">interceptor</text>
+
+  <!-- Subtitle -->
+  <text x="130" y="95" font-family="monospace" font-size="10" fill="#7f8c8d">Universal IM · ASR · OCR</text>
+
+  <!-- Version badge -->
+  <rect x="260" y="15" width="45" height="20" rx="4" fill="#27ae60"/>
+  <text x="282" y="29" font-family="monospace" font-size="9" fill="white" text-anchor="middle">v0.3</text>
+</svg>
