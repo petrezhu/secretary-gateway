@@ -37,9 +37,17 @@ Homepage = "https://github.com/petrezhu/secretary-gateway"
 Repository = "https://github.com/petrezhu/secretary-gateway"
 Issues = "https://github.com/petrezhu/secretary-gateway/issues"
 
+[tool.hatch.build.targets.wheel]
+only-include = ["__init__.py", "plugin.yaml", "install.sh", "LICENSE", "README.md"]
+packages = ["."]
+sources = [".", "gateway_interceptor"]
+
 [tool.ruff]
 target-version = "py39"
 line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

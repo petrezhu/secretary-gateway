@@ -1,33 +1,18 @@
 # gateway-interceptor
 
+<p align="center">
+  <img src="docs/images/logo.svg" alt="gateway-interceptor" width="320"/>
+</p>
+
 Universal IM message interception plugin for AI Agent harnesses.
 
 Enriches inbound messages (voice → text via ASR, image → text via OCR) and routes them through a conforming gateway daemon for smart dispatch — simple intents handled directly, complex queries pass through to the agent.
 
 ## Architecture
 
-```
-User message (text / voice / image)
-    │
-    ▼
-┌──────────────────────────────────────────────────┐
-│  Agent Harness                                   │
-│  (Hermes · OpenClaw · QClaw · MimoClaw · …)     │
-│                                                  │
-│  gateway-interceptor plugin                      │
-│       │                                          │
-│       ├─ Platform filter                         │
-│       ├─ ASR: voice → text (MiMo-V2.5-ASR, …)  │
-│       ├─ OCR: image → text (DeepSeek-V4, …)     │
-│       │                                          │
-│       ▼                                          │
-│  POST /api/inbound ──────────────────────────────┼──▶ Gateway Daemon
-│                                                  │    (Secretary / your daemon)
-│       ├─ {action:"handle", reply:"..."} → skip   │         │
-│       ├─ {action:"allow"}               → agent  │         ├─ Intent dispatch
-│       └─ daemon unreachable             → fail-open│        ├─ Data query
-└──────────────────────────────────────────────────┘         └─ Decision
-```
+<p align="center">
+  <img src="docs/images/architecture.svg" alt="Architecture" width="840"/>
+</p>
 
 ## Two Abstraction Layers
 
@@ -71,6 +56,10 @@ Response:
 Implementing this contract is all a daemon needs. Secretary is the reference implementation; you can build your own with any stack.
 
 ## Media Enrichment Pipeline
+
+<p align="center">
+  <img src="docs/images/pipeline.svg" alt="Pipeline" width="840"/>
+</p>
 
 Messages go through a three-stage enrichment before hitting the daemon:
 
