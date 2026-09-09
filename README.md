@@ -4,6 +4,8 @@
   <img src="docs/images/logo.svg" alt="gateway-interceptor" width="320"/>
 </p>
 
+> [中文版本](README.zh-CN.md)
+
 Universal IM message interception plugin for AI Agent harnesses.
 
 Enriches inbound messages (voice → text via ASR, image → text via OCR) and routes them through a conforming gateway daemon for smart dispatch — simple intents handled directly, complex queries pass through to the agent.
