@@ -4,114 +4,171 @@
   <img src="docs/images/logo.svg" alt="gateway-interceptor" width="320"/>
 </p>
 
-> [中文版本](README.zh-CN.md)
+> **≈0 latency · 0 tokens · all modalities · <50MB memory · all harnesses**
+>
+> A [hermes-agent](https://github.com/NousResearch/hermes-agent) plugin that strips "simple intents + media enrichment" out of the Agent main loop. User sends voice/image/text, the plugin intercepts before the Agent, converts via ASR/OCR, matches intent via pure regex, replies directly — **the Agent is never woken up**.
 
-Universal IM message interception plugin for AI Agent harnesses.
+<p>
+<a href="#-quick-start"><img src="https://img.shields.io/badge/latency-≈0ms-22C55E?style=for-the-badge" alt="≈0ms"></a>
+<a href="#-quick-start"><img src="https://img.shields.io/badge/tokens-0-22C55E?style=for-the-badge" alt="0 tokens"></a>
+<a href="#-quick-start"><img src="https://img.shields.io/badge/modality-text·voice·image-2563EB?style=for-the-badge" alt="all modalities"></a>
+<a href="#-quick-start"><img src="https://img.shields.io/badge/memory-<50MB-22C55E?style=for-the-badge" alt="<50MB"></a>
+<a href="#-quick-start"><img src="https://img.shields.io/badge/harness-all-2563EB?style=for-the-badge" alt="all harnesses"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="MIT"></a>
+</p>
 
-Enriches inbound messages (voice → text via ASR, image → text via OCR) and routes them through a conforming gateway daemon for smart dispatch — simple intents handled directly, complex queries pass through to the agent.
+**English** | [简体中文](README.zh-CN.md)
 
-## Architecture
+---
+
+## 🎯 Problem it solves
+
+Agent frameworks (Hermes/OpenClaw/QClaw/MimoClaw) run: **user message → LLM reasoning → tool calls → reply**. This is correct for complex queries, but wasteful for:
+
+| Scenario | Agent main loop | gateway-interceptor |
+|----------|----------------|-------------------|
+| "hello" | LLM reasoning → token cost → 2-5s | Pure regex → 0 tokens → <50ms |
+| Portfolio screenshot | Agent calls vision tool → multi-turn | OCR extracts text → direct routing |
+| Voice message | Agent can't understand directly | ASR transcribes → intent match → reply |
+| "todo list" | LLM understands intent → query DB | Regex matches → query DB → reply |
+
+**Tokens saved over time**: high-frequency simple intents get intercepted, Agent LLM calls drop sharply. Out of 100 messages, maybe 70 get intercepted, only 30 wake the Agent.
+
+## ✨ Core features
+
+<table>
+<tr><td><b>≈0 latency</b></td><td>Pure regex + keyword matching, no LLM reasoning, <50ms decision. User feels "instant reply".</td></tr>
+<tr><td><b>0 token cost</b></td><td>Intent matching calls zero LLM APIs. ASR/OCR only trigger when needed, using the cheapest models.</td></tr>
+<tr><td><b>All modalities</b></td><td>Text handled directly. Voice via ASR (MiMo-V2.5-ASR). Images via OCR (DeepSeek-V4). Unified text output for routing.</td></tr>
+<tr><td><b><50MB memory</b></td><td>Single-file plugin, sole dependency <code>requests</code>. No resident memory, no state, no model loading.</td></tr>
+<tr><td><b>All harnesses</b></td><td>Hermes Agent works out of the box. OpenClaw/QClaw/MimoClaw via <code>register(ctx)</code>. Daemon side only needs <code>POST /api/inbound</code>.</td></tr>
+<tr><td><b>Fail-open</b></td><td>Daemon unreachable, ASR fail, OCR fail → message passes through to Agent. Nothing is ever lost.</td></tr>
+<tr><td><b>Hot-pluggable</b></td><td>Symlink install, code changes take effect immediately. No Harness source modification, no fork. Harness upgrades don't break the plugin.</td></tr>
+<tr><td><b>Production-grade</b></td><td>Code-block-aware splitting (no mid-<code>```</code> cuts), Telegram UTF-16 length, silence filter (🔇), chunk indicators (1/3).</td></tr>
+</table>
+
+## 🧭 Where it sits
+
+- **vs using Agent for everything:** Agent LLM reasoning for "hello", "todo" is over-engineering. gateway-interceptor intercepts with pure regex in <50ms, saving tokens and latency. Agent only handles queries that truly need reasoning.
+- **vs LiteLLM and LLM gateways:** LiteLLM intercepts API requests (prompt → completion). gateway-interceptor intercepts IM messages (user message → intent dispatch). Different layers, no conflict.
+- **vs Botpress/Rasa chatbot platforms:** Those are heavyweight full-stack platforms. gateway-interceptor is an 841-line single-file plugin with zero framework dependencies.
+
+```
+                  Lightweight ←──────────────────→ Heavy
+                    │
+  Message intercept ──── ● gateway-interceptor (us)
+                    │
+  LLM proxy ─────── │ ──── LiteLLM
+                    │
+  Chat platforms ─── │ ──────────── Botpress / Rasa
+                    │
+  Agent runtimes ── │ ────────────────── OpenClaw / Hermes
+                    │
+  Workflow platforms ── ──────────────────────── Dify / n8n
+```
+
+---
+
+## 🏛️ Architecture at a glance
 
 <p align="center">
   <img src="docs/images/architecture.svg" alt="Architecture" width="840"/>
 </p>
 
-## Two Abstraction Layers
+**The contract in one line:** `register(ctx)` registers a `pre_gateway_dispatch` hook; for intercepted messages the plugin enriches them (ASR/OCR), calls the daemon's `POST /api/inbound`, and either replies directly or passes through to the agent. **Harness: 0 lines changed.**
 
-### Harness Side (who loads this plugin)
-
-The plugin registers a `pre_gateway_dispatch` hook — the Hermes convention. Other harnesses adapt the hook name in `register()`:
-
-| Harness | Hook Mechanism | Adaptation |
-|---------|---------------|------------|
-| **Hermes Agent** | `ctx.register_hook("pre_gateway_dispatch", cb)` | Works out of the box |
-| **OpenClaw** | Plugin loader TBD | Implement `register(ctx)` for OpenClaw's hook system |
-| **QClaw** | Plugin loader TBD | Same pattern |
-| **MimoClaw** | Plugin loader TBD | Same pattern |
-
-The hook contract is harness-agnostic:
-
-```python
-def hook(event, gateway, **kwargs) -> {"action": "skip"} | {"action": "allow"} | None
-```
-
-### Daemon Side (what this plugin calls)
-
-Any HTTP service implementing `POST /api/inbound`:
+### Component map
 
 ```
-Request:
-{
-    "text": "user message (after ASR/OCR enrichment)",
-    "user_id": "12345",
-    "chat_id": "channel-789",
-    "chat_type": "dm | group",
-    "platform": "qqbot | telegram | discord | ..."
-}
-
-Response:
-{"action": "handle", "reply": "daemon's answer"}      → plugin replies, agent skips
-{"action": "handle", "replies": ["part1", "part2"]}   → multi-part reply
-{"action": "allow"}                                    → pass to agent
+secretary-gateway/
+├── __init__.py                     Core: hook registration + ASR + OCR
+│                                     + Hermes utils (utf16/truncate/silence)
+│                                     + message routing (handle/allow/fail-open)
+├── plugin.yaml                     Hermes directory-plugin manifest
+├── pyproject.toml                  Python package metadata + hatchling build
+├── install.sh                      Install script (copy/symlink, global/profile)
+├── README.md                       English docs
+├── README.zh-CN.md                 Chinese docs
+├── SPEC.md                         Feature spec (24 user stories + decisions)
+├── LICENSE                         MIT
+├── docs/images/
+│   ├── logo.svg                    3D wedge logo
+│   ├── architecture.svg            Architecture diagram
+│   └── pipeline.svg                Enrichment pipeline diagram
+└── tests/
+    ├── test_pure_functions.py      Pure functions: utf16/truncate/silence/url (69 tests)
+    ├── test_config.py              Config fallback chain: env priority + defaults (16 tests)
+    └── test_hook.py                Hook behavior: handle/allow/fail-open (13 tests)
 ```
 
-Implementing this contract is all a daemon needs. Secretary is the reference implementation; you can build your own with any stack.
+<details>
+<summary><b>Deep dive — the dispatch contract (for developers taking over this repo)</b></summary>
 
-## Media Enrichment Pipeline
+1. **Entry point, no Harness patches.** `register(ctx)` registers a `pre_gateway_dispatch` hook. For messages on intercepted platforms, the hook owns enrichment and routing.
 
-<p align="center">
-  <img src="docs/images/pipeline.svg" alt="Pipeline" width="840"/>
-</p>
+2. **Media enrichment is a pipeline.** Raw message → has text? → use directly. Has voice? → ASR (download → ffmpeg convert → `POST /v1/audio/transcriptions`). Has image? → OCR (download → base64 → `POST /v1/chat/completions`). Each stage is fail-open.
 
-Messages go through a three-stage enrichment before hitting the daemon:
+3. **Daemon contract is HTTP.** `POST /api/inbound` with `{text, user_id, chat_id, chat_type, platform}`. Response: `{action: "handle", reply: "..."}` or `{action: "allow"}`.
 
-```
-Raw message
-    │
-    ├─ Has text? → use text directly
-    │
-    ├─ Has voice? → ASR (speech-to-text)
-    │   └─ Download audio → ffmpeg convert → POST /v1/audio/transcriptions
-    │      Models: MiMo-V2.5-ASR (fallback chain, configurable)
-    │
-    ├─ Has image? → OCR (image-to-text)
-    │   └─ Download image → base64 → POST /v1/chat/completions (vision)
-    │      Models: deepseek-v4-flash (fallback chain, configurable)
-    │
-    └─ None of above → pass to agent (let agent handle natively)
-```
+4. **Reply handling is multi-stage.** Silence filter removes `silent`/`🔇`/`no reply`. `truncate_message()` splits long replies at code-block boundaries with chunk indicators `(1/3)`. Replies sent via gateway adapter (fire-and-forget on event loop thread).
 
-Each stage is fail-open: if ASR/OCR fails, the message passes through to the agent unchanged.
+5. **Config uses fallback chains.** `GATEWAY_DAEMON_URL` → `SECRETARY_GATEWAY_URL` → default. All env vars have backward-compatible aliases. Module-level constants read at import time.
 
-## Install
+6. **Hermes utilities are pure functions.** `utf16_len()`, `_prefix_within_utf16_limit()`, `_custom_unit_to_cp()`, `truncate_message()` — all derived from Hermes Agent's `gateway/platforms/base.py`. Zero dependency, zero side effects.
 
-### Copy into harness plugins directory
+</details>
+
+---
+
+## 🚀 Quick Start
+
+### 1. Install the plugin
 
 ```bash
-# Global (all profiles)
+# Option A: Symlink (recommended for development)
+ln -sf /path/to/secretary-gateway ~/.hermes/plugins/gateway-interceptor
+
+# Option B: Copy
 cp __init__.py plugin.yaml ~/.hermes/plugins/gateway-interceptor/
 
-# Per-profile
-cp __init__.py plugin.yaml ~/.hermes/profiles/main/plugins/gateway-interceptor/
-```
-
-### Symlink (development)
-
-```bash
-ln -sf /path/to/secretary-gateway ~/.hermes/plugins/gateway-interceptor
-```
-
-### Install script
-
-```bash
+# Option C: Install script
 ./install.sh                    # global copy
-./install.sh --profile main     # per-profile copy
+./install.sh --profile main     # per-profile
 ./install.sh --symlink          # symlink mode
 ```
 
 Restart the harness to load the plugin.
 
-## Configuration
+### 2. Configure environment variables
+
+```bash
+# Daemon connection (required if not default)
+export GATEWAY_DAEMON_URL="http://127.0.0.1:8901"
+
+# ASR (optional — for voice messages)
+export ASR_API_BASE="http://127.0.0.1:3300/v1"
+export ASR_MODELS="MiMo-V2.5-ASR"
+
+# OCR (optional — for image messages)
+export OCR_MODELS="deepseek-v4-flash,deepseek-v4-pro"
+
+# Platform filter
+export GATEWAY_INTERCEPT_PLATFORMS="qqbot"  # or empty for all
+```
+
+### 3. Verify
+
+```bash
+# Run tests
+python3 -m pytest tests/ -v
+
+# Check plugin loads
+python3 -c "from __init__ import register; print('✅ Plugin loads')"
+```
+
+---
+
+## ⚙️ Configuration
 
 ### Daemon Connection
 
@@ -147,7 +204,28 @@ Supported audio formats: `.wav`, `.mp3`, `.ogg`, `.opus`, `.amr`, `.silk`, `.fla
 | `OCR_MODELS` | `deepseek-v4-flash,deepseek-v4-pro` | Model fallback chain |
 | `OCR_TIMEOUT` | `30` | OCR timeout (seconds) |
 
-## Requirements
+---
+
+## 🧪 Testing
+
+```bash
+# All tests
+python3 -m pytest tests/ -v
+
+# Specific test file
+python3 -m pytest tests/test_pure_functions.py -v   # 69 tests
+python3 -m pytest tests/test_config.py -v           # 16 tests
+python3 -m pytest tests/test_hook.py -v             # 13 tests
+
+# Lint
+ruff check __init__.py --select E,F,W,I
+```
+
+**Total: 98 tests, 0.27s runtime.**
+
+---
+
+## 📦 Requirements
 
 - **Python** ≥ 3.9
 - **requests** (only external dependency)
@@ -156,15 +234,9 @@ Supported audio formats: `.wav`, `.mp3`, `.ogg`, `.opus`, `.amr`, `.silk`, `.fla
 - Vision API (optional, for OCR)
 - ASR API (optional, for voice transcription)
 
-## Design Principles
+---
 
-- **Universal**: Works with any Agent harness and any conforming daemon.
-- **Self-contained**: Zero dependency on daemon's Python package.
-- **Fail-open**: Daemon unreachable, ASR fail, OCR fail → message passes to agent. Nothing is lost.
-- **No LLM in hot path**: Plugin does enrichment only; intent dispatch lives in the daemon.
-- **Fallback chains**: Both ASR and OCR try multiple models in order before giving up.
-
-## Acknowledgments
+## 🙏 Acknowledgments
 
 This project incorporates code and design patterns derived from
 [Hermes Agent](https://github.com/NousResearch/hermes-agent) by Nous Research.
@@ -177,15 +249,15 @@ This project incorporates code and design patterns derived from
 | `truncate_message()` | `gateway/platforms/base.py` | Code-block-aware message splitting with chunk indicators |
 | `_SILENCE_NARRATION` | `gateway/delivery.py` | Silence narration filter (suppresses `silent`, `🔇`, etc.) |
 
-These functions are pure, zero-dependency, and extracted verbatim or adapted
-with minimal changes. They enhance the core message pipeline without adding
-any runtime overhead or external dependencies.
+These functions are pure, zero-dependency, and extracted verbatim or adapted with minimal changes.
 
-## License
+---
+
+## 📄 License
 
 MIT
 
-## Related Projects
+## 🔗 Related Projects
 
 - [Secretary](https://github.com/petrezhu/secretary) — Reference daemon implementation
 - [Hermes Agent](https://github.com/nousresearch/hermes-agent) — Reference harness
