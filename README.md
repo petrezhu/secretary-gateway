@@ -233,18 +233,7 @@ ruff check __init__.py --select E,F,W,I
 
 ## 🙏 Acknowledgments
 
-This project incorporates code and design patterns derived from
-[Hermes Agent](https://github.com/NousResearch/hermes-agent) by Nous Research.
-
-| Function | Source | Purpose |
-|----------|--------|---------|
-| `utf16_len()` | `gateway/platforms/base.py` | Telegram message length in UTF-16 code units |
-| `_prefix_within_utf16_limit()` | `gateway/platforms/base.py` | Safe UTF-16 truncation (surrogate-pair aware) |
-| `_custom_unit_to_cp()` | `gateway/platforms/base.py` | Binary search for custom length unit boundaries |
-| `truncate_message()` | `gateway/platforms/base.py` | Code-block-aware message splitting with chunk indicators |
-| `_SILENCE_NARRATION` | `gateway/delivery.py` | Silence narration filter (suppresses `silent`, `🔇`, etc.) |
-
-These functions are pure, zero-dependency, and extracted verbatim or adapted with minimal changes.
+See [CONTRIBUTING.md](CONTRIBUTING.md#acknowledgments).
 
 ---
 
