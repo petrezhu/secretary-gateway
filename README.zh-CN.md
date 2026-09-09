@@ -51,23 +51,16 @@ Agent 框架（Hermes/OpenClaw/QClaw/MimoClaw）的主链路是：**用户消息
 
 ## 🧭 定位对比
 
-- **vs 直接用 Agent 处理所有消息：** Agent 的 LLM 推理对"你好"、"待办"是过度工程化。gateway-interceptor 用纯正则 <50ms 拦截，省 token 省延迟。Agent 只处理真正需要推理的复杂查询。
-- **vs LiteLLM 等 LLM 网关：** LiteLLM 拦截的是 API 请求（prompt → completion），gateway-interceptor 拦截的是 IM 消息（用户消息 → 意图分发）。层级不同，不冲突。
-- **vs Botpress/Rasa 等对话平台：** 那些是重量级全栈平台。gateway-interceptor 是一个 841 行的单文件插件，不引入任何框架。
+| 定位 | 代表项目 | 特点 | 与我们的关系 |
+|------|---------|------|-------------|
+| **消息拦截** | **gateway-interceptor（我们）** | 单文件插件，冷智能优先，0 token，<50ms | — |
+| LLM 代理 | LiteLLM | 拦截 API 请求（prompt→completion），做路由/限流/降级 | 层级不同，不冲突 |
+| 对话平台 | Botpress / Rasa | 重量级全栈平台，内建 NLU + 对话管理 | 我们是 841 行插件，不引入框架 |
+| Agent 运行时 | OpenClaw / Hermes | 完整的 LLM Agent 执行环境 | 我们是它们的插件，不是替代品 |
+| 工作流平台 | Dify / n8n | 可视化编排，多步骤工作流 | 我们只做消息拦截，不做编排 |
+| 沉淀式冷智能体 | Secretary | 规则引擎 + 数据积累，0 LLM 调用 | 我们是它的消息入口 |
 
-```
-                  轻量 ←──────────────────→ 重量
-                    │
-  消息拦截 ──────── ● gateway-interceptor（我们）
-                    │
-  LLM 代理 ──────── │ ──── LiteLLM
-                    │
-  对话平台 ──────── │ ──────────── Botpress / Rasa
-                    │
-  Agent 运行时 ──── │ ────────────────── OpenClaw / Hermes
-                    │
-  工作流平台 ────── │ ──────────────────────── Dify / n8n
-```
+**一句话：** 我们是最轻量的消息拦截层，坐在冷智能（Secretary）和热智能（Agent）之间，能用规则处理的绝不唤醒 LLM。
 
 ---
 

@@ -51,23 +51,16 @@ Agent frameworks (Hermes/OpenClaw/QClaw/MimoClaw) run: **user message → LLM re
 
 ## 🧭 Where it sits
 
-- **vs using Agent for everything:** Agent LLM reasoning for "hello", "todo" is over-engineering. gateway-interceptor intercepts with pure regex in <50ms, saving tokens and latency. Agent only handles queries that truly need reasoning.
-- **vs LiteLLM and LLM gateways:** LiteLLM intercepts API requests (prompt → completion). gateway-interceptor intercepts IM messages (user message → intent dispatch). Different layers, no conflict.
-- **vs Botpress/Rasa chatbot platforms:** Those are heavyweight full-stack platforms. gateway-interceptor is an 841-line single-file plugin with zero framework dependencies.
+| Category | Representative | Characteristic | Relationship with us |
+|----------|---------------|----------------|---------------------|
+| **Message interception** | **gateway-interceptor (us)** | Single-file plugin, cold intelligence first, 0 tokens, <50ms | — |
+| LLM proxy | LiteLLM | Intercepts API requests (prompt→completion), routing/rate-limiting | Different layer, no conflict |
+| Chat platforms | Botpress / Rasa | Heavyweight full-stack, built-in NLU + dialogue management | We're 841 lines, zero framework |
+| Agent runtimes | OpenClaw / Hermes | Full LLM Agent execution environment | We're their plugin, not a replacement |
+| Workflow platforms | Dify / n8n | Visual orchestration, multi-step workflows | We only intercept messages, no orchestration |
+| Sedimentary cold agent | Secretary | Rule engine + data accumulation, 0 LLM calls | We're its message gateway |
 
-```
-                  Lightweight ←──────────────────→ Heavy
-                    │
-  Message intercept ──── ● gateway-interceptor (us)
-                    │
-  LLM proxy ─────── │ ──── LiteLLM
-                    │
-  Chat platforms ─── │ ──────────── Botpress / Rasa
-                    │
-  Agent runtimes ── │ ────────────────── OpenClaw / Hermes
-                    │
-  Workflow platforms ── ──────────────────────── Dify / n8n
-```
+**In one sentence:** We're the lightest message interception layer, sitting between cold intelligence (Secretary) and hot intelligence (Agent) — if rules can handle it, never wake the LLM.
 
 ---
 
