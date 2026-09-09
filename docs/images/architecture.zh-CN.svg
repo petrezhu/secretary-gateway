@@ -1,0 +1,91 @@
+<svg viewBox="0 0 840 420" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+      <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e5e5e5" stroke-width="0.5"/>
+    </pattern>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#999"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#27ae60"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#e74c3c"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="840" height="420" fill="#fafafa"/>
+  <rect width="840" height="420" fill="url(#grid)"/>
+
+  <!-- Title -->
+  <text x="40" y="36" font-family="monospace" font-size="14" fill="#333" font-weight="bold">gateway-interceptor</text>
+  <text x="240" y="36" font-family="monospace" font-size="12" fill="#888">[ 架构总览 ]</text>
+
+  <!-- User box -->
+  <rect x="30" y="70" width="120" height="50" rx="6" fill="none" stroke="#3498db" stroke-width="2"/>
+  <text x="90" y="92" font-family="monospace" font-size="11" fill="#3498db" text-anchor="middle">用户</text>
+  <text x="90" y="108" font-family="monospace" font-size="9" fill="#999" text-anchor="middle">文字 / 语音 / 图片</text>
+
+  <!-- Arrow: User → Plugin -->
+  <line x1="150" y1="95" x2="210" y2="95" stroke="#999" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Plugin box -->
+  <rect x="215" y="55" width="200" height="180" rx="6" fill="#f0f8ff" stroke="#3498db" stroke-width="2"/>
+  <text x="315" y="78" font-family="monospace" font-size="12" fill="#3498db" text-anchor="middle" font-weight="bold">gateway-interceptor</text>
+  <text x="315" y="95" font-family="monospace" font-size="9" fill="#999" text-anchor="middle">[ 消息拦截插件 ]</text>
+
+  <!-- Pipeline stages -->
+  <rect x="235" y="110" width="160" height="24" rx="4" fill="none" stroke="#9b59b6" stroke-width="1"/>
+  <text x="315" y="126" font-family="monospace" font-size="10" fill="#9b59b6" text-anchor="middle">ASR  语音 → 文字</text>
+
+  <rect x="235" y="142" width="160" height="24" rx="4" fill="none" stroke="#9b59b6" stroke-width="1"/>
+  <text x="315" y="158" font-family="monospace" font-size="10" fill="#9b59b6" text-anchor="middle">OCR  图片 → 文字</text>
+
+  <rect x="235" y="174" width="160" height="24" rx="4" fill="none" stroke="#f39c12" stroke-width="1"/>
+  <text x="315" y="190" font-family="monospace" font-size="10" fill="#f39c12" text-anchor="middle">过滤 · 分块</text>
+
+  <rect x="235" y="206" width="160" height="20" rx="4" fill="none" stroke="#27ae60" stroke-width="1"/>
+  <text x="315" y="220" font-family="monospace" font-size="10" fill="#27ae60" text-anchor="middle">POST /api/inbound</text>
+
+  <!-- Arrow: Plugin → Daemon -->
+  <line x1="415" y1="145" x2="490" y2="145" stroke="#27ae60" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+  <text x="452" y="138" font-family="monospace" font-size="8" fill="#27ae60" text-anchor="middle">HTTP</text>
+
+  <!-- Daemon box -->
+  <rect x="495" y="70" width="160" height="150" rx="6" fill="#f0fff0" stroke="#27ae60" stroke-width="2"/>
+  <text x="575" y="92" font-family="monospace" font-size="12" fill="#27ae60" text-anchor="middle" font-weight="bold">守护进程</text>
+  <text x="575" y="108" font-family="monospace" font-size="9" fill="#999" text-anchor="middle">[ /api/inbound ]</text>
+
+  <rect x="510" y="120" width="130" height="20" rx="4" fill="none" stroke="#27ae60" stroke-width="1"/>
+  <text x="575" y="134" font-family="monospace" font-size="9" fill="#27ae60" text-anchor="middle">意图分发</text>
+
+  <rect x="510" y="148" width="130" height="20" rx="4" fill="none" stroke="#27ae60" stroke-width="1"/>
+  <text x="575" y="162" font-family="monospace" font-size="9" fill="#27ae60" text-anchor="middle">数据查询</text>
+
+  <rect x="510" y="176" width="130" height="20" rx="4" fill="none" stroke="#27ae60" stroke-width="1"/>
+  <text x="575" y="190" font-family="monospace" font-size="9" fill="#27ae60" text-anchor="middle">决策返回</text>
+
+  <!-- Arrow: Plugin → Agent (fail-open) -->
+  <line x1="315" y1="235" x2="315" y2="290" stroke="#e74c3c" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow-red)"/>
+  <text x="330" y="268" font-family="monospace" font-size="8" fill="#e74c3c">故障放行</text>
+
+  <!-- Agent box -->
+  <rect x="240" y="295" width="150" height="45" rx="6" fill="#fff5f5" stroke="#e74c3c" stroke-width="1.5"/>
+  <text x="315" y="315" font-family="monospace" font-size="11" fill="#e74c3c" text-anchor="middle">Agent (LLM)</text>
+  <text x="315" y="330" font-family="monospace" font-size="8" fill="#999" text-anchor="middle">复杂查询</text>
+
+  <!-- Arrow: Daemon → Plugin (response) -->
+  <line x1="495" y1="175" x2="420" y2="175" stroke="#27ae60" stroke-width="1" stroke-dasharray="4,3" opacity="0.5" marker-end="url(#arrow-green)"/>
+  <text x="458" y="195" font-family="monospace" font-size="8" fill="#999" text-anchor="middle">处理 / 放行</text>
+
+  <!-- Arrow: Plugin → User (reply) -->
+  <line x1="215" y1="95" x2="155" y2="95" stroke="#27ae60" stroke-width="1" stroke-dasharray="4,3" opacity="0.5" marker-end="url(#arrow-green)"/>
+
+  <!-- Harness label -->
+  <rect x="190" y="370" width="480" height="30" rx="4" fill="none" stroke="#ccc" stroke-width="1" stroke-dasharray="5,3"/>
+  <text x="430" y="390" font-family="monospace" font-size="10" fill="#999" text-anchor="middle">Agent 框架  (Hermes · OpenClaw · QClaw · MimoClaw)</text>
+
+  <!-- Bottom note -->
+  <text x="420" y="415" font-family="monospace" font-size="9" fill="#999" text-anchor="middle">简单意图 → 守护进程直接处理。复杂查询 → Agent。不可达 → 故障放行。</text>
+</svg>

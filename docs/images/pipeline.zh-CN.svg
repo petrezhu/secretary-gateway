@@ -1,0 +1,94 @@
+<svg viewBox="0 0 840 380" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+      <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e5e5e5" stroke-width="0.5"/>
+    </pattern>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#999"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="840" height="380" fill="#fafafa"/>
+  <rect width="840" height="380" fill="url(#grid)"/>
+
+  <!-- Title -->
+  <text x="40" y="36" font-family="monospace" font-size="14" fill="#333" font-weight="bold">消息增强管线</text>
+  <text x="190" y="36" font-family="monospace" font-size="12" fill="#888">[ 消息处理流程 ]</text>
+
+  <!-- Stage 1: Raw message -->
+  <rect x="30" y="70" width="130" height="50" rx="6" fill="#f0f8ff" stroke="#3498db" stroke-width="2"/>
+  <text x="95" y="92" font-family="monospace" font-size="11" fill="#3498db" text-anchor="middle">原始消息</text>
+  <text x="95" y="108" font-family="monospace" font-size="8" fill="#999" text-anchor="middle">文字 · 语音 · 图片</text>
+
+  <!-- Arrow -->
+  <line x1="160" y1="95" x2="195" y2="95" stroke="#999" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Stage 2: Has text? -->
+  <polygon points="250,70 300,95 250,120 200,95" fill="none" stroke="#f39c12" stroke-width="1.5"/>
+  <text x="250" y="99" font-family="monospace" font-size="9" fill="#f39c12" text-anchor="middle">有文字?</text>
+
+  <!-- Yes path -->
+  <line x1="300" y1="95" x2="350" y2="95" stroke="#27ae60" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="325" y="88" font-family="monospace" font-size="8" fill="#27ae60" text-anchor="middle">有</text>
+
+  <!-- No path -->
+  <line x1="250" y1="120" x2="250" y2="155" stroke="#e74c3c" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="262" y="142" font-family="monospace" font-size="8" fill="#e74c3c">无</text>
+
+  <!-- Stage 3: ASR -->
+  <rect x="175" y="160" width="150" height="50" rx="6" fill="#f5f0ff" stroke="#9b59b6" stroke-width="2"/>
+  <text x="250" y="180" font-family="monospace" font-size="11" fill="#9b59b6" text-anchor="middle">语音识别 ASR</text>
+  <text x="250" y="198" font-family="monospace" font-size="8" fill="#999" text-anchor="middle">语音 → 文字 (MiMo-V2.5)</text>
+
+  <!-- Arrow ASR → OCR -->
+  <line x1="250" y1="210" x2="250" y2="245" stroke="#999" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Stage 4: OCR -->
+  <rect x="175" y="250" width="150" height="50" rx="6" fill="#f5f0ff" stroke="#9b59b6" stroke-width="2"/>
+  <text x="250" y="270" font-family="monospace" font-size="11" fill="#9b59b6" text-anchor="middle">文字识别 OCR</text>
+  <text x="250" y="288" font-family="monospace" font-size="8" fill="#999" text-anchor="middle">图片 → 文字 (DeepSeek-V4)</text>
+
+  <!-- Arrow from text? yes → Enrich -->
+  <line x1="350" y1="95" x2="400" y2="95" stroke="#27ae60" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Arrow from OCR → Enrich -->
+  <path d="M325,275 L380,275 L380,120 L400,120" fill="none" stroke="#9b59b6" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+
+  <!-- Stage 5: Enriched text -->
+  <rect x="405" y="70" width="130" height="50" rx="6" fill="#f0fff0" stroke="#27ae60" stroke-width="2"/>
+  <text x="470" y="92" font-family="monospace" font-size="11" fill="#27ae60" text-anchor="middle">增强后文本</text>
+  <text x="470" y="108" font-family="monospace" font-size="8" fill="#999" text-anchor="middle">可路由的纯文本</text>
+
+  <!-- Arrow → Silence filter -->
+  <line x1="535" y1="95" x2="575" y2="95" stroke="#999" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Stage 6: Silence filter -->
+  <rect x="580" y="70" width="120" height="50" rx="6" fill="#fff8f0" stroke="#f39c12" stroke-width="1.5"/>
+  <text x="640" y="90" font-family="monospace" font-size="10" fill="#f39c12" text-anchor="middle">静默过滤</text>
+  <text x="640" y="108" font-family="monospace" font-size="8" fill="#999" text-anchor="middle">🔇 → 放行给 Agent</text>
+
+  <!-- Arrow → Truncate -->
+  <line x1="700" y1="95" x2="730" y2="95" stroke="#999" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Stage 7: Truncate -->
+  <rect x="710" y="70" width="100" height="50" rx="6" fill="#f0f8ff" stroke="#3498db" stroke-width="1.5"/>
+  <text x="760" y="90" font-family="monospace" font-size="10" fill="#3498db" text-anchor="middle">智能分块</text>
+  <text x="760" y="108" font-family="monospace" font-size="8" fill="#999" text-anchor="middle">代码块感知</text>
+
+  <!-- Fail-open path -->
+  <line x1="175" y1="185" x2="120" y2="185" stroke="#e74c3c" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="120" y1="185" x2="120" y2="300" stroke="#e74c3c" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="120" y1="300" x2="400" y2="300" stroke="#e74c3c" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="260" y="315" font-family="monospace" font-size="8" fill="#e74c3c" text-anchor="middle">故障放行：原样传递给 Agent</text>
+
+  <!-- Output arrow -->
+  <line x1="760" y1="120" x2="760" y2="170" stroke="#27ae60" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Output: Reply -->
+  <rect x="700" y="175" width="120" height="40" rx="6" fill="#f0fff0" stroke="#27ae60" stroke-width="2"/>
+  <text x="760" y="200" font-family="monospace" font-size="11" fill="#27ae60" text-anchor="middle">发送回复</text>
+
+  <!-- Bottom note -->
+  <text x="420" y="365" font-family="monospace" font-size="9" fill="#999" text-anchor="middle">每一级都是故障放行：如果增强失败，消息原样传递给 Agent，绝不丢消息。</text>
+</svg>
