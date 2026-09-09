@@ -6,7 +6,7 @@
 
 > **≈0 延迟 · 0 tokens · 全模态 · <50MB 内存 · 全框架适配**
 >
-> [Secretary](https://github.com/petrezhu/secretary) 的消息入口。在 LLM Agent 之前拦截消息，能用规则处理的直接回复，处理不了的才唤醒 Agent。冷智能优先，热智能兜底。
+> 一个 [hermes-agent](https://github.com/NousResearch/hermes-agent) 插件，[Secretary（沉淀式冷智能体）](https://github.com/petrezhu/secretary) 的消息入口。在 LLM Agent 之前拦截消息，用规则能处理的直接回复，处理不了的才唤醒 Agent。
 
 <p>
 <a href="#-快速开始"><img src="https://img.shields.io/badge/延迟-≈0ms-22C55E?style=for-the-badge" alt="≈0ms"></a>
@@ -23,32 +23,18 @@
 
 ## 🎯 解决什么问题
 
-AI Agent 是**热智能**——每次对话都要烧 token 做 LLM 推理。这对复杂问题是对的，但对"你好"、"待办"、"持仓多少"是浪费。
+Agent 框架（Hermes/OpenClaw/QClaw/MimoClaw）的主链路是：**用户消息 → LLM 推理 → 工具调用 → 回复**。这对复杂问题是对的，但对以下场景是浪费：
 
-[Secretary](https://github.com/petrezhu/secretary) 是**沉淀式冷智能体**——不推理，靠规则库 + 数据积累运转。监控、督导、财富分析、早安简报，全部确定性执行，零 token 消耗。
+[Secretary](https://github.com/petrezhu/secretary) 是一个**沉淀式冷智能体**——不靠 LLM 推理，靠规则库 + 数据积累运转。监控、督导、财富分析、早安简报，全部确定性执行，零 token 消耗。gateway-interceptor 是它的消息入口，负责在 Agent（热智能）之前拦截消息，能用冷智能处理的直接处理，处理不了的才唤醒热智能。
 
-**gateway-interceptor 是冷热智能的分界线：**
+| 场景 | Agent 主链路 | gateway-interceptor |
+|------|-------------|-------------------|
+| "你好" | LLM 推理 → 消耗 token → 2-5 秒 | 纯正则匹配 → 0 token → <50ms |
+| 发一张持仓截图 | Agent 调用视觉工具 → 多轮交互 | OCR 提取文字 → 直接路由 |
+| 发一段语音 | Agent 无法直接理解音频 | ASR 转文字 → 意图匹配 → 回复 |
+| "待办" | LLM 理解意图 → 查询数据库 | 正则命中 → 直接查 → 直接回 |
 
-```
-用户消息
-    │
-    ▼
-gateway-interceptor（消息拦截）
-    │
-    ├─ 冷智能能处理？→ Secretary 规则引擎 → 直接回复（0 token, <50ms）
-    │
-    └─ 冷智能处理不了？→ 唤醒热智能 → Agent LLM 推理 → 回复（消耗 token）
-```
-
-| 场景 | 热智能（Agent） | 冷智能（Secretary） |
-|------|----------------|-------------------|
-| "你好" | LLM 推理 → 消耗 token → 2-5 秒 | 正则匹配 → 0 token → <50ms |
-| 发一张持仓截图 | Agent 调视觉工具 → 多轮 | OCR 提取 → 意图路由 → 直接回 |
-| 发一段语音 | Agent 无法直接理解 | ASR 转文字 → 正则匹配 → 回复 |
-| "待办" | LLM 理解意图 → 查库 | 正则命中 → 直接查 → 直接回 |
-| "服务器状态" | LLM + 工具调用 → 2-3 秒 | 直接读 psutil → <50ms |
-
-**越用越省 tokens**：高频简单意图被冷智能拦截，Agent 的 LLM 调用次数直线下降。100 条消息里，可能 70 条被冷智能处理，只有 30 条唤醒 Agent。
+**越用越省 tokens**：高频简单意图被拦截后，Agent 的 LLM 调用次数直线下降。100 条消息里，可能 70 条被拦截，只有 30 条唤醒 Agent。
 
 ## ✨ 核心特性
 
@@ -58,26 +44,30 @@ gateway-interceptor（消息拦截）
 <tr><td><b>全模态输入</b></td><td>文字直接处理。语音通过 ASR（MiMo-V2.5-ASR）转文字。图片通过 OCR（DeepSeek-V4）提取文字。统一输出为文本后路由。</td></tr>
 <tr><td><b><50MB 内存</b></td><td>单文件插件，唯一依赖 requests。不常驻内存，不持有状态，不加载模型。</td></tr>
 <tr><td><b>全框架适配</b></td><td>Hermes Agent 开箱即用。OpenClaw/QClaw/MimoClaw 通过 <code>register(ctx)</code> 适配。守护进程侧只需实现 <code>POST /api/inbound</code>。</td></tr>
-<tr><td><b>故障放行设计</b></td><td>冷智能不可达、ASR 失败、OCR 失败 → 消息原样放行给热智能。绝不丢消息。</td></tr>
+<tr><td><b>故障放行设计</b></td><td>守护进程不可达、ASR 失败、OCR 失败 → 消息原样放行给 Agent。绝不丢消息。</td></tr>
 <tr><td><b>热插拔中间件</b></td><td>Symlink 安装，改代码即生效。不修改框架源码，不 fork 任何项目。升级框架不影响插件。</td></tr>
 <tr><td><b>生产级消息处理</b></td><td>代码块感知分块（不劈开 <code>```</code>）、Telegram UTF-16 长度计算、静默占位符过滤（🔇）、分段标记（1/3）。</td></tr>
 </table>
 
-## 🧭 冷智能 vs 热智能
+## 🧭 定位对比
 
-| 维度 | 沉淀式冷智能（Secretary） | LLM 热智能（Agent） |
-|------|-------------------------|-------------------|
-| 决策方式 | 规则库 + 关键词匹配 | LLM 推理 |
-| 每次调用成本 | 0 token | 数百~数千 token |
-| 响应延迟 | <50ms | 2-5 秒 |
-| 确定性 | 完全可预测 | 有幻觉风险 |
-| 能力边界 | 规则覆盖范围 | 通用推理 |
-| 智能来源 | 数据积累 + 规则沉淀 | 模型参数 |
-| 适合场景 | 高频、确定性、有数据支撑的意图 | 复杂、开放、需要推理的查询 |
+- **vs 直接用 Agent 处理所有消息：** Agent 的 LLM 推理对"你好"、"待办"是过度工程化。gateway-interceptor 用纯正则 <50ms 拦截，省 token 省延迟。Agent 只处理真正需要推理的复杂查询。
+- **vs LiteLLM 等 LLM 网关：** LiteLLM 拦截的是 API 请求（prompt → completion），gateway-interceptor 拦截的是 IM 消息（用户消息 → 意图分发）。层级不同，不冲突。
+- **vs Botpress/Rasa 等对话平台：** 那些是重量级全栈平台。gateway-interceptor 是一个 841 行的单文件插件，不引入任何框架。
 
-**冷智能的"冷"不是"低能"，而是"低成本"。** 它用积累替代推理，用规则替代猜测。越用越精准，越用越省 token。
-
-gateway-interceptor 的价值：**让冷智能能处理的事，绝不唤醒热智能。**
+```
+                  轻量 ←──────────────────→ 重量
+                    │
+  消息拦截 ──────── ● gateway-interceptor（我们）
+                    │
+  LLM 代理 ──────── │ ──── LiteLLM
+                    │
+  对话平台 ──────── │ ──────────── Botpress / Rasa
+                    │
+  Agent 运行时 ──── │ ────────────────── OpenClaw / Hermes
+                    │
+  工作流平台 ────── │ ──────────────────────── Dify / n8n
+```
 
 ---
 
@@ -87,7 +77,7 @@ gateway-interceptor 的价值：**让冷智能能处理的事，绝不唤醒热�
   <img src="docs/images/architecture.zh-CN.svg" alt="架构图" width="840"/>
 </p>
 
-**一句话契约：** `register(ctx)` 注册 `pre_gateway_dispatch` 钩子；插件拦截消息后进行增强（ASR/OCR），调用冷智能的 `POST /api/inbound`，然后直接回复或放行给热智能。**框架：0 行代码改动。**
+**一句话契约：** `register(ctx)` 注册 `pre_gateway_dispatch` 钩子；插件拦截消息后进行增强（ASR/OCR），调用守护进程的 `POST /api/inbound`，然后直接回复或放行给 Agent。**框架：0 行代码改动。**
 
 ### 组件地图
 
@@ -122,7 +112,7 @@ secretary-gateway/
 
 2. **媒体增强是一条管线。** 原始消息 → 有文字？→ 直接使用。有语音？→ ASR（下载 → ffmpeg 转码 → `POST /v1/audio/transcriptions`）。有图片？→ OCR（下载 → base64 编码 → `POST /v1/chat/completions`）。每一级都是故障放行。
 
-3. **冷智能契约是 HTTP。** `POST /api/inbound`，请求体 `{text, user_id, chat_id, chat_type, platform}`。响应：`{action: "handle", reply: "..."}` 或 `{action: "allow"}`。
+3. **守护进程契约是 HTTP。** `POST /api/inbound`，请求体 `{text, user_id, chat_id, chat_type, platform}`。响应：`{action: "handle", reply: "..."}` 或 `{action: "allow"}`。
 
 4. **回复处理是多阶段的。** 静默过滤器移除 `silent`/`🔇`/`no reply`。`truncate_message()` 在代码块边界处分块，附带分段标记 `(1/3)`。回复通过网关适配器发送（事件循环线程上 fire-and-forget）。
 
@@ -156,7 +146,7 @@ cp __init__.py plugin.yaml ~/.hermes/plugins/gateway-interceptor/
 ### 2. 配置环境变量
 
 ```bash
-# 冷智能连接（非默认地址时需要配置）
+# 守护进程连接（非默认地址时需要配置）
 export GATEWAY_DAEMON_URL="http://127.0.0.1:8901"
 
 # ASR（可选——用于语音消息）
@@ -184,11 +174,11 @@ python3 -c "from __init__ import register; print('✅ 插件加载成功')"
 
 ## ⚙️ 配置参考
 
-### 冷智能连接
+### 守护进程连接
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `GATEWAY_DAEMON_URL` | `http://127.0.0.1:8901` | 冷智能 HTTP 地址 |
+| `GATEWAY_DAEMON_URL` | `http://127.0.0.1:8901` | 守护进程 HTTP 地址 |
 | `GATEWAY_DAEMON_TIMEOUT` | `3` | API 调用超时（秒） |
 | `GATEWAY_DAEMON_ENDPOINT` | `/api/inbound` | 入站消息端点路径 |
 | `GATEWAY_INTERCEPT_PLATFORMS` | `qqbot` | 拦截的平台（逗号分隔，留空=全部） |
@@ -243,7 +233,7 @@ ruff check __init__.py --select E,F,W,I
 
 - **Python** ≥ 3.9
 - **requests**（唯一外部依赖）
-- 运行中的[冷智能体](https://github.com/petrezhu/secretary)（实现 `POST /api/inbound`）
+- 运行中的**守护进程**（实现 `POST /api/inbound`）
 - **ffmpeg**（可选，用于语音格式转换）
 - 视觉 API（可选，用于 OCR）
 - ASR API（可选，用于语音转录）
@@ -272,5 +262,5 @@ MIT
 
 ## 🔗 相关项目
 
-- [Secretary](https://github.com/petrezhu/secretary) — 沉淀式冷智能体（规则引擎 + 数据积累）
+- [Secretary](https://github.com/petrezhu/secretary) — 沉淀式冷智能体（规则引擎 + 数据积累，0 LLM 调用）
 - [Hermes Agent](https://github.com/nousresearch/hermes-agent) — LLM 热智能体（推理引擎）
