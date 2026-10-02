@@ -231,6 +231,22 @@ ruff check __init__.py --select E,F,W,I
 
 ---
 
+## 🔀 Pushing changes (incremental, no force-push)
+
+GitHub (`petrezhu/secretary-gateway`, **public**) is the clean, no-private-history remote. The local repository is migrated from bundle history that may contain private/undesired commits — **never** force-push local HEAD or the whole local history over the remote `main`.
+
+Push fixes as **file-level increments**: sync only the content of changed files onto a clean shallow clone of GitHub `main`, commit, and push — never carrying other local history, never force-pushing remote `main`. Use the canonical script in the Secretary repo:
+
+```bash
+# dry-run, then real push (each repo in the script's REPOS array)
+/root/git/secretary/scripts/push-incremental-fixes.sh --dry-run
+/root/git/secretary/scripts/push-incremental-fixes.sh
+```
+
+The script shallow-clones GitHub `main`, copies the modified files from local, commits as a clean increment, and `push origin main`. Always `git ls-remote` to confirm the remote HEAD first, and fetch the token programmatically via `git credential fill` (never print it).
+
+---
+
 ## 🙏 Acknowledgments
 
 See [CONTRIBUTING.md](CONTRIBUTING.md#acknowledgments).
