@@ -72,7 +72,7 @@ DAEMON_URL = os.environ.get(
 )
 DAEMON_TIMEOUT = float(os.environ.get(
     "GATEWAY_DAEMON_TIMEOUT",
-    os.environ.get("SECRETARY_TIMEOUT", "3"),
+    os.environ.get("SECRETARY_TIMEOUT", "20"),
 ))
 DAEMON_ENDPOINT = os.environ.get("GATEWAY_DAEMON_ENDPOINT", "/api/inbound")
 
@@ -475,13 +475,7 @@ def _on_pre_gateway_dispatch(
             replies = truncate_message(reply)
 
         if replies:
-            for i, chunk in enumerate(replies):
-                if chunk:
-                    _send_reply_sync(gateway, platform, chat_id, chunk)
-                    logger.info(
-                        "Daemon handled %s/%s: part %d/%d",
-                        user_id, platform_name, i + 1, len(replies),
-                    )
+            _send_multi_part(gateway, platform, chat_id, replies, user_id, platform_name)
         elif reply:
             _send_reply_sync(gateway, platform, chat_id, reply)
             logger.info(
@@ -541,6 +535,119 @@ def _is_image_url(url: str) -> bool:
 # ── Reply Sending ────────────────────────────────────────────────────────────
 
 
+def _platform_value(platform: Any) -> str:
+    """Extract a comparable platform name token from an enum object or string."""
+    if isinstance(platform, str):
+        return platform
+    val = getattr(platform, "value", None)
+    if isinstance(val, str):
+        return val
+    return getattr(platform, "name", None) or ""
+
+
+def _candidate_keys(platform: Any) -> tuple:
+    """Candidate dict keys to try for an adapter, in preference order.
+
+    A multiplexed gateway registers its primary adapters under the flat
+    ``gateway.adapters`` and secondary-profile adapters under
+    ``gateway._profile_adapters`` — and an adapter's key may be the ``Platform``
+    Enum itself OR its ``.value`` string depending on the harness version. Try
+    every shape so a key-type mismatch never drops a reply.
+    """
+    keys = [platform]
+    v = _platform_value(platform)
+    if v:
+        keys.append(v)
+    return tuple(k for k in keys if k is not None)
+
+
+def _find_adapter(gateway: Any, platform: Any) -> Any:
+    """Resolve the live platform adapter, robust to multiplexing and key type.
+
+    Order: primary ``gateway.adapters`` → per-profile maps under
+    ``_profile_adapters`` → a scan-by-name fallback. Returns None only when no
+    connected adapter handles *platform*.
+    """
+    candidates = _candidate_keys(platform)
+    # 1. Primary / default adapters (flat map).
+    adapters = getattr(gateway, "adapters", None)
+    if adapters:
+        for k in candidates:
+            hit = adapters.get(k)
+            if hit is not None:
+                return hit
+        # Flat map keyed by an unrelated scheme: match by platform value.
+        for ad in adapters.values():
+            if _platform_value(getattr(ad, "platform", None)) == _platform_value(platform):
+                return ad
+    # 2. Per-profile adapter maps (multiplex).
+    prof_map = getattr(gateway, "_profile_adapters", None)
+    if prof_map:
+        for prof_adapters in prof_map.values():
+            if not prof_adapters:
+                continue
+            for k in candidates:
+                hit = prof_adapters.get(k)
+                if hit is not None:
+                    return hit
+            for ad in prof_adapters.values():
+                if _platform_value(getattr(ad, "platform", None)) == _platform_value(platform):
+                    return ad
+    # 3. Fallback: any adapter whose platform name matches.
+    flat = list(adapters.values()) if adapters else []
+    prof = [a for m in (prof_map or {}).values() if m for a in m.values()]
+    for key_ad in flat + prof:
+        if _platform_value(getattr(key_ad, "platform", None)) == _platform_value(platform):
+            return key_ad
+    return None
+
+
+def _send_multi_part(
+    gateway: Any,
+    platform: Any,
+    chat_id: str,
+    replies: list[str],
+    user_id: str,
+    platform_name: str,
+) -> None:
+    """Send multiple reply chunks as a single async task with ordering delays.
+
+    Each chunk is sent sequentially with a 0.3s gap to guarantee the
+    receiving platform (e.g. QQ) delivers them in order.
+    """
+    async def _send_all() -> None:
+        for i, chunk in enumerate(replies):
+            if not chunk:
+                continue
+            try:
+                adapter = _find_adapter(gateway, platform)
+                if adapter is None:
+                    logger.warning("No adapter for platform %s", platform)
+                    return
+                result = await adapter.send(chat_id, chunk)
+                if not getattr(result, "success", False):
+                    logger.warning("Send part %d failed: %s", i + 1, getattr(result, "error", "unknown"))
+                else:
+                    logger.info(
+                        "Daemon handled %s/%s: part %d/%d",
+                        user_id, platform_name, i + 1, len(replies),
+                    )
+            except Exception as exc:
+                logger.error("Send part %d error: %s", i + 1, exc)
+            # Delay between parts (skip after the last one)
+            if i < len(replies) - 1:
+                await asyncio.sleep(0.3)
+
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(_send_all())
+        else:
+            loop.run_until_complete(_send_all())
+    except Exception as exc:
+        logger.error("Multi-part send error: %s", exc)
+
+
 def _send_reply_sync(
     gateway: Any,
     platform: Any,
@@ -553,8 +660,7 @@ def _send_reply_sync(
     not run_coroutine_threadsafe (would deadlock).
     """
     try:
-        adapters = getattr(gateway, "adapters", {})
-        adapter = adapters.get(platform)
+        adapter = _find_adapter(gateway, platform)
         if adapter is None:
             logger.warning("No adapter for platform %s", platform)
             return
